@@ -53,6 +53,7 @@ SVD based on implicit QR with Wilkinson Shift
 #define JIXIE_IMPLICIT_QR_SVD_H
 
 #include "Tools.h"
+#include <iostream>
 
 namespace JIXIE {
 
@@ -425,9 +426,12 @@ polarDecomposition(const Eigen::MatrixBase<TA>& A,
    \param[out] V Rotation matrix
    \param[out] D Vector of eigenvalues of S
  */
-
+/**
 template <class T, class TD>
-inline void JacobiRotation(const Eigen::Matrix<T, 2, 2>& S, Eigen::Matrix<T, 2, 2>& V, Eigen::Matrix<T, 2, 1>& D)
+inline std::enable_if_t<isSize<T> (2, 2) && isSize<TD>(2, 1)> 
+JacobiRotation(const Eigen::MatrixBase<T>& S, 
+		const Eigen::MatrixBase<T>& V, 
+		const Eigen::MatrixBase<TD>& D)
 {
 	using std::sqrt;
 
@@ -455,7 +459,7 @@ inline void JacobiRotation(const Eigen::Matrix<T, 2, 2>& S, Eigen::Matrix<T, 2, 
 	D(0) = (c * S(0,0) - s * S(1,0)) * c - (c * S(1,0) - s * S(1,1)) * s;
 	D(1) = (s * S(1,1) + c * S(1,0)) * s + (s * S(1,0) + c * S(1,1)) * c;
 }	
-
+*/
 
 
 /**
@@ -465,28 +469,62 @@ inline void JacobiRotation(const Eigen::Matrix<T, 2, 2>& S, Eigen::Matrix<T, 2, 
    \param[out] Sigma Vector of singular values sorted with decreasing magnitude. The second one can be negative.
    \param[out] V Robustly a rotation matrix.
 */
-template <class TA, class T, class Ts>
-inline std::enable_if_t<isSize<TA>(2, 2) && isSize<T>(2, 2) && isSize<Ts>(2, 1)>
+template <class T>
+inline void 
 singularValueDecomposition(
-    const Eigen::MatrixBase<TA>& A,
-    const Eigen::MatrixBase<T>& U,
-    const Eigen::MatrixBase<Ts>& Sigma,
-    const Eigen::MatrixBase<T>& V,
-    const ScalarType<TA> tol = 64 * std::numeric_limits<ScalarType<TA> >::epsilon())
+    const Eigen::Matrix<T, 2, 2>& F,
+    Eigen::Matrix<T, 2, 2>& U,
+    Eigen::Matrix<T, 2, 1>& Sigma,
+    Eigen::Matrix<T, 2, 2>& V,
+    ScalarType<T> tol = 64 * std::numeric_limits<ScalarType<T> >::epsilon())
 {
     using std::sqrt;
-    Eigen::MatrixBase<Ts>& sigma = const_cast<Eigen::MatrixBase<Ts>&>(Sigma);
 
     Eigen::Matrix<T, 2, 2> C, Vhat, Utilde, Vtilde;
-    Eigen::Matrix<Ts, 2, 1> Sigma_hat, Sigma_tilde;
+    Eigen::Matrix<T, 2, 1> Sigma_hat, Sigma_tilde;
     bool det_V_neg = false, det_U_neg = false;	// flag of the negativity of determinant of V, U.
+    
+    /**
+     * ALGORITHM
+     */
+
     // Step 1
     C = F * F.transpose();
+
     // Step 2, Jacobi Rotation
-    Eigen::Matrix<Ts, 2, 1> Sigma_s;	// square of eigenvalues
-    JacobiRotation(C, Vhat, Sigma_s);	// do Jacobi rotation
+    Eigen::Matrix<T, 2, 1> Sigma_s;	// square of eigenvalues
+    // JacobiRotation(C, Vhat, Sigma_s);	// do Jacobi rotation
+    T t, c, s, tau;	// tangent, cosine, sine
+    T C11 = C(0, 0); 
+    T C21 = C(1, 0);
+    T C22 = C(1, 1);
+
+    if (C11 != 0)
+    {
+		tau = (C22 - C11)/(2 * C21);
+		if (tau > 0)
+			t = 1 / (tau + sqrt(1 + pow(tau,2)));
+		
+		else
+			t = 1 / (tau - sqrt(1 + pow(tau,2)));
+		c = 1 / sqrt(1 + pow(t,2));
+		s = t * c;
+     } 
+    else
+    {
+		c = 0;
+		s = 1;
+    }
+    Vhat(0,0) = c;
+    Vhat(1,0) = s;
+    Vhat(0,1) = -s;
+    Vhat(1,1) = c;
+    Sigma_s(0) = (c * C11- s * C21) * c - (c * C21 - s * C22) * s;
+    Sigma_s(1) = (s * C22 + c * C21) * s + (s * C21 + c * C22) * c;
+
     // Step 3
     Sigma_hat(0) = sqrt(Sigma_s(0)), Sigma_hat(1) = sqrt(Sigma_s(1));
+    
     // Step 4, sorting the eigenvalues
     if (Sigma_hat(0) < Sigma_hat(1)){
 	Sigma_tilde(0) = Sigma_hat(1);
@@ -530,16 +568,16 @@ singularValueDecomposition(
     V = Vtilde;
     T det_F = F(0,0) * F(1,1) - F(1,0) * F(0,1);
     if (det_F < 0){
-	    sigma(0) = Sigma_tilde(0);
-	    sigma(1) = - Sigma_tilde(1);
-	    if (neg_U_det)
+	    Sigma(0) = Sigma_tilde(0);
+	    Sigma(1) = - Sigma_tilde(1);
+	    if (det_U_neg)
 		    U.col(1) = -U.col(1);
 	    else
 		    V.col(1) = -V.col(1);
     }
     else if (det_F > 0){
-	    sigma(0) = Sigma_tilde(0);
-	    sigma(1) = SIgma_tilde(1);
+	    Sigma(0) = Sigma_tilde(0);
+	    Sigma(1) = Sigma_tilde(1);
 
 	    if (det_U_neg && det_V_neg){
 		    U.col(1) = - U.col(1);
@@ -547,8 +585,8 @@ singularValueDecomposition(
 	    }
     }
     else if (det_F == 0){
-	    sigma(0) = Sigma_tilde(0);
-	    sigma(1) = Sigma_tilde(1);
+	    Sigma(0) = Sigma_tilde(0);
+	    Sigma(1) = Sigma_tilde(1);
 	    if (det_U_neg && det_V_neg){
 		    U.col(0) = - U.col(0);
 		    V.col(0) = - V.col(0);
