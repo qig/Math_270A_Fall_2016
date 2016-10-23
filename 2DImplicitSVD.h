@@ -438,15 +438,54 @@ singularValueDecomposition(
     using std::sqrt;
     Eigen::MatrixBase<Ts>& sigma = const_cast<Eigen::MatrixBase<Ts>&>(Sigma);
 
-    Eigen::Matrix<T, 2, 2> C, Vhat;
+    Eigen::Matrix<T, 2, 2> C, Vhat, Utilde, Vtilde;
+    Eigen::Matrix<Ts, 2, 1> Sigma_hat, Sigma_tilde;
+    bool det_V_neg = false, det_U_neg = false;	// flag of the negativity of determinant of V, U.
     // Step 1
     C = F * F.transpose();
     // Step 2, Jacobi Rotation
-    Eigen::Matrix<T, 2, 1> Sigma_s;	// square of eigenvalues
+    Eigen::Matrix<Ts, 2, 1> Sigma_s;	// square of eigenvalues
     JacobiRotation(C, Vhat, Sigma_s);	// do Jacobi rotation
-    T sigma_1s = Sigma_s(0,0), sigma_2s = Sigma_s(1,0);
     // Step 3
-     
+    Sigma_hat(0) = sqrt(Sigma_s(0)), Sigma_hat(1) = sqrt(Sigma_s(1));
+    // Step 4, sorting the eigenvalues
+    if (Sigma_hat(0) < Sigma_hat(1)){
+	Sigma_tilde(0) = Sigma_hat(1);
+	Sigma_tilde(1) = Sigma_hat(0);
+	Vtilde(0,0) = Vhat(1,0);
+	Vtilde(0,1) = Vhat(1,1);
+	Vtilde(1,0) = Vhat(0,0);
+	Vtilde(1,1) = Vhat(0,1);
+	det_V_neg = true;	// change the flag
+    }
+
+    else{
+	Sigma_tilde(0) = Sigma_hat(0);
+	Sigma_tilde(1) = Sigma_hat(1);
+	Vtilde(0,0) = Vhat(1,0);
+	Vtilde(0,1) = Vhat(1,1);
+	Vtilde(1,0) = Vhat(0,0);
+	Vtilde(1,1) = Vhat(0,1);
+    } 
+
+    // Step 5, A = FV
+    Eigen::Matrix<T, 2, 2> A;
+    A = F * V; 
+    
+    // Step 6, QR Decomposition using Givens Rotation
+    GivensRotation<T> r(A(0,0), A(1,0), 0, 1);
+    Eigen::Matrix<T, 2, 2> Q_tran;
+    r.fill(Q_tran);
+    Utilde = Q_tran.transpose();
+    
+    // Step 7,
+    T r22 = Q_tran(1,0) * A(0,1) + Q_tran(1,1) * A(1,1);
+    if (r22 < 0){
+	    Utilde(1,0) = -Utilde(1,0);
+	    Utilde(1,1) = -Utilde(1,1);
+	    det_U_neg = true;	// change the flag
+    }
+
     T cosine, sine;
     T x = S_Sym(0, 0);
     T y = S_Sym(0, 1);

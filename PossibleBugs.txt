@@ -1,0 +1,3 @@
+10/22/2016
+
+The lazy evaluation .noalias has been used in matrix multiplication.
