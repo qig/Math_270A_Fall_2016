@@ -420,19 +420,58 @@ polarDecomposition(const Eigen::MatrixBase<TA>& A,
 }
 
 /**
+   \brief 2x2 Jacobi rotation S = VDV'
+   \param[in] S Input symmetric matrix.
+   \param[out] V Rotation matrix
+   \param[out] D Vector of eigenvalues of S
+ */
+
+template <class T, class TD>
+inline void JacobiRotation(const Eigen::Matrix<T, 2, 2>& S, Eigen::Matrix<T, 2, 2>& V, Eigen::Matrix<T, 2, 1>& D)
+{
+	using std::sqrt;
+
+	T t, c, s, tau;	// tangent, cosine, sine
+	if (S(1,0) != 0)
+	{
+		tau = (S(1,1) - S(0,0))/(2 * S(1,0));
+		if (tau > 0)
+			t = 1 / (tau + sqrt(1 + pow(tau,2)));
+		
+		else
+			t = 1 / (tau - sqrt(1 + pow(tau,2)));
+		c = 1 / sqrt(1 + pow(t,2));
+		s = t * c;
+	}
+	else
+	{
+		c = 0;
+		s = 1;
+	}
+	V(0,0) = c;
+	V(1,0) = s;
+	V(0,1) = -s;
+	V(1,1) = c;
+	D(0) = (c * S(0,0) - s * S(1,0)) * c - (c * S(1,0) - s * S(1,1)) * s;
+	D(1) = (s * S(1,1) + c * S(1,0)) * s + (s * S(1,0) + c * S(1,1)) * c;
+}	
+
+
+
+/**
    \brief 2x2 SVD (singular value decomposition) A=USV'
    \param[in] A Input matrix.
-   \param[out] U Robustly a rotation matrix in Givens form
+   \param[out] U Robustly a rotation matrix.
    \param[out] Sigma Vector of singular values sorted with decreasing magnitude. The second one can be negative.
-   \param[out] V Robustly a rotation matrix in Givens form
+   \param[out] V Robustly a rotation matrix.
 */
 template <class TA, class T, class Ts>
-inline std::enable_if_t<isSize<TA>(2, 2) && isSize<Ts>(2, 1)>
+inline std::enable_if_t<isSize<TA>(2, 2) && isSize<T>(2, 2) && isSize<Ts>(2, 1)>
 singularValueDecomposition(
-    const Eigen::MatrixBase<TA>& F,
-    GivensRotation<T>& U,
+    const Eigen::MatrixBase<TA>& A,
+    const Eigen::MatrixBase<T>& U,
     const Eigen::MatrixBase<Ts>& Sigma,
-    GivensRotation<T>& V,
+    const Eigen::MatrixBase<T>& V,
     const ScalarType<TA> tol = 64 * std::numeric_limits<ScalarType<TA> >::epsilon())
 {
     using std::sqrt;
@@ -486,80 +525,39 @@ singularValueDecomposition(
 	    det_U_neg = true;	// change the flag
     }
 
-    T cosine, sine;
-    T x = S_Sym(0, 0);
-    T y = S_Sym(0, 1);
-    T z = S_Sym(1, 1);
-    if (y == 0) {
-        // S is already diagonal
-        cosine = 1;
-        sine = 0;
-        sigma(0) = x;
-        sigma(1) = z;
+    // Step 8, sign rearrangement
+    U = Utilde;
+    V = Vtilde;
+    T det_F = F(0,0) * F(1,1) - F(1,0) * F(0,1);
+    if (det_F < 0){
+	    sigma(0) = Sigma_tilde(0);
+	    sigma(1) = - Sigma_tilde(1);
+	    if (neg_U_det)
+		    U.col(1) = -U.col(1);
+	    else
+		    V.col(1) = -V.col(1);
     }
-    else {
-        T tau = 0.5 * (x - z);
-        T w = sqrt(tau * tau + y * y);
-        // w > y > 0
-        T t;
-        if (tau > 0) {
-            // tau + w > w > y > 0 ==> division is safe
-            t = y / (tau + w);
-        }
-        else {
-            // tau - w < -w < -y < 0 ==> division is safe
-            t = y / (tau - w);
-        }
-        cosine = T(1) / sqrt(t * t + T(1));
-        sine = -t * cosine;
-        /*
-          V = [cosine -sine; sine cosine]
-          Sigma = V'SV. Only compute the diagonals for efficiency.
-          Also utilize symmetry of S and don't form V yet.
-        */
-        T c2 = cosine * cosine;
-        T csy = 2 * cosine * sine * y;
-        T s2 = sine * sine;
-        sigma(0) = c2 * x - csy + s2 * z;
-        sigma(1) = s2 * x + csy + c2 * z;
-    }
+    else if (det_F > 0){
+	    sigma(0) = Sigma_tilde(0);
+	    sigma(1) = SIgma_tilde(1);
 
-    // Sorting
-    // Polar already guarantees negative sign is on the small magnitude singular value.
-    if (sigma(0) < sigma(1)) {
-        std::swap(sigma(0), sigma(1));
-        V.c = -sine;
-        V.s = cosine;
+	    if (det_U_neg && det_V_neg){
+		    U.col(1) = - U.col(1);
+		    V.col(1) = - V.col(1);
+	    }
     }
-    else {
-        V.c = cosine;
-        V.s = sine;
+    else if (det_F == 0){
+	    sigma(0) = Sigma_tilde(0);
+	    sigma(1) = Sigma_tilde(1);
+	    if (det_U_neg && det_V_neg){
+		    U.col(0) = - U.col(0);
+		    V.col(0) = - V.col(0);
+	    
+	    }
     }
-    U *= V;
+    
+		    
 }
-/**
-   \brief 2x2 SVD (singular value decomposition) A=USV'
-   \param[in] A Input matrix.
-   \param[out] U Robustly a rotation matrix.
-   \param[out] Sigma Vector of singular values sorted with decreasing magnitude. The second one can be negative.
-   \param[out] V Robustly a rotation matrix.
-*/
-template <class TA, class TU, class Ts, class TV>
-inline std::enable_if_t<isSize<TA>(2, 2) && isSize<TU>(2, 2) && isSize<TV>(2, 2) && isSize<Ts>(2, 1)>
-singularValueDecomposition(
-    const Eigen::MatrixBase<TA>& A,
-    const Eigen::MatrixBase<TU>& U,
-    const Eigen::MatrixBase<Ts>& Sigma,
-    const Eigen::MatrixBase<TV>& V,
-    const ScalarType<TA> tol = 64 * std::numeric_limits<ScalarType<TA> >::epsilon())
-{
-    using T = ScalarType<TA>;
-    GivensRotation<T> gv(0, 1);
-    GivensRotation<T> gu(0, 1);
-    singularValueDecomposition(A, gu, Sigma, gv);
 
-    gu.fill(U);
-    gv.fill(V);
-}
 }
 #endif
