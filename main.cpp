@@ -30,7 +30,6 @@ SOFTWARE.
 
 #include <cmath>
 #include "Tools.h"
-#include "HW1.h"
 #include "BenchMarkSVD.h"
 
 int main()

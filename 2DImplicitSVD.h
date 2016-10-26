@@ -19,10 +19,9 @@ T may be float or double.
 */
 
 /**
-SVD based on implicit QR with Wilkinson Shift
 */
-#ifndef JIXIE_IMPLICIT_QR_SVD_H
-#define JIXIE_IMPLICIT_QR_SVD_H
+#ifndef JIXIE_IMPLICIT_POLAR_SVD_HW1_H
+#define JIXIE_IMPLICIT_POLAR_SVD_HW1_H
 
 #include "Tools.h"
 #include <iostream>
@@ -188,8 +187,55 @@ public:
 };
 
 /**
+   \brief 2x2 Jacobi Rotaion C = VDV'
+   \param[in] C Symmetric matrix
+   \param[out] Sigma Vector containing all the eigenvalues
+   \param[out] V Orthogonal matrix
+*/
+
+template <class T>
+inline void
+JacobiRotation(
+   const Eigen::Matrix<T, 2, 2>& C,
+   Eigen::Matrix<T, 2, 2>& V,
+   Eigen::Matrix<T, 2, 1>& Sigma)
+{
+
+    T t, c, s, tau;	// tangent, cosine, sine
+    T C11 = C(0, 0); 
+    T C21 = C(1, 0);
+    T C22 = C(1, 1);
+
+    if (std::fabs(C21) > 1e-10)
+    {
+		tau = (C22 - C11)/(2. * C21);
+		if (tau > 0)
+			t = - C21 / (sqrt(pow(C21, 2) + pow((C22-C11)/2., 2)) + (C22-C11)/2.);
+		
+		else
+			t = - C21 / ((C22-C11)/2. - sqrt(pow(C21, 2) + pow((C22-C11)/2., 2)));
+		c = JIXIE::MATH_TOOLS::rsqrt(1. + pow(t,2));
+		s = t * c;
+     		// Sigma(0) = pow(c, 2) * C11 + 2. * c * s * C21 + pow(s, 2) * C22;
+     		// Sigma(1) = pow(c, 2) * C11 - 2. * c * s * C21 + pow(s, 2) * C22;
+     } 
+    else
+    {
+		c = 1;
+		s = 0;
+		// Sigma(0) = C(0, 0);
+		// Sigma(1) = C(1, 1);
+    }
+
+    V << c, -s, s, c;
+     Eigen::Matrix<T, 2, 2> D = V.transpose() * C * V;
+     Sigma(0) = std::max(T(D(0, 0)), T(0));
+     Sigma(1) = std::max(T(D(1, 1)), T(0));
+}
+
+/**
    \brief 2x2 SVD (singular value decomposition) A=USV'
-   \param[in] A Input matrix.
+   \param[in] F Input matrix.
    \param[out] U Robustly a rotation matrix.
    \param[out] Sigma Vector of singular values sorted with decreasing magnitude. The second one can be negative.
    \param[out] V Robustly a rotation matrix.
@@ -205,8 +251,6 @@ singularValueDecomposition(
 {
     using std::sqrt;
 
-    Eigen::Matrix<T, 2, 2> C, Vhat, Utilde, Vtilde;
-    Eigen::Matrix<T, 2, 1> Sigma_hat, Sigma_tilde;
     bool det_V_neg = false, det_U_neg = false;	// flag of the negativity of determinant of V, U.
     
     /**
@@ -214,78 +258,42 @@ singularValueDecomposition(
      */
 
     // Step 1
+    Eigen::Matrix<T, 2, 2> C;
     C.noalias() = F.transpose() * F;
 
-    // Step 2, Jacobi Rotation
-    Eigen::Matrix<T, 2, 1> Sigma_s;	// square of eigenvalues
-    // JacobiRotation(C, Vhat, Sigma_s);	// do Jacobi rotation
-    T t, c, s, tau;	// tangent, cosine, sine
-    T C11 = C(0, 0); 
-    T C21 = C(1, 0);
-    T C22 = C(1, 1);
-
-    if (std::fabs(C21) > 1e-10)
-    {
-		tau = (C22 - C11)/(2 * C21);
-		if (tau > 0)
-			t = - C21 / (sqrt(pow(C21,2) + pow((C22-C11)/2,2)) + (C22-C11)/2);
-		
-		else
-			t = - C21 / ((C22-C11)/2 - sqrt(pow(C21,2) + pow((C22-C11)/2,2)));
-		c =  JIXIE::MATH_TOOLS::rsqrt(1 + pow(t,2));
-		s = t * c;
-     } 
-    else
-    {
-		c = 1;
-		s = 0;
-    }
-    Vhat << c, -s, s, c;
-    Sigma_s(0) = pow(c,2) * C11 + 2 * c * s * C21 + pow(s,2) * C22;
-    Sigma_s(1) = pow(c,2) * C11 - 2 * c * s * C21 + pow(s,2) * C22;
+    // Step 2, Jacobi Rotation, the sigma here is the square of singular values
+    JacobiRotation(C, V, Sigma);
 
     // Step 3
-    Sigma_hat(0) = sqrt(Sigma_s(0));
-    Sigma_hat(1) = sqrt(Sigma_s(1));
+    Sigma(0) = sqrt(Sigma(0));
+    Sigma(1) = sqrt(Sigma(1));
     
     // Step 4, sorting the eigenvalues
-    if (Sigma_hat(0) < Sigma_hat(1)){
-	Sigma_tilde(0) = Sigma_hat(1);
-	Sigma_tilde(1) = Sigma_hat(0);
-	Vtilde.col(0) = Vhat.col(1);
-	Vtilde.col(1) = Vhat.col(0);
+    if (Sigma(0) < Sigma(1)){
+	Sigma.row(0).swap(Sigma.row(1));
+	V.col(0).swap(V.col(1));
 	det_V_neg = true;	// change the flag
     }
 
-    else{
-	Sigma_tilde(0) = Sigma_hat(0);
-	Sigma_tilde(1) = Sigma_hat(1);
-	Vtilde = Vhat;	
-    } 
-
     // Step 5, A = F * Vtilde
     Eigen::Matrix<T, 2, 2> A;
-    A.noalias() = F * Vtilde; 
+    A.noalias() = F * V; 
     
     // Step 6, QR Decomposition using Givens Rotation
     GivensRotation<T> r(A(0, 0), A(1, 0), 0, 1);
-    r.fill(Utilde);
-    //Utilde = Utilde.transpose();
+    r.fill(U);
     
-    // Step 7,
+    // Step 7, fill in U = [q1, \pm q2]
     r.rowRotation(A);
     if (A(1,1) < 0){
-	    Utilde.col(1) = - Utilde.col(1);
+	    U.col(1) = - U.col(1);
 	    det_U_neg = true;	// change the flag
     }
 
     // Step 8, sign rearrangement
-    U = Utilde;
-    V = Vtilde;
-    Sigma(0) = Sigma_tilde(0);
-    Sigma(1) = Sigma_tilde(1);
     T det_F = F(0,0) * F(1,1) - F(1,0) * F(0,1);
     if (det_F < 0){
+	    Sigma(1) = -Sigma(1);
 	    if (det_U_neg)
 		    U.col(1) = -U.col(1);
 	    else
@@ -303,14 +311,14 @@ singularValueDecomposition(
 		    V.col(1) = -V.col(1);
 		    if (!det_U_neg)
 		    {
-		    	    Sigma(1) = -Sigma(1);
+		    	    Sigma(0) = -Sigma(0);
 		    }
 	    }
 	    if (det_U_neg){
 		    U.col(1) = - U.col(1);
 	   	    if (!det_V_neg)
 		    {
-			    Sigma(1) = -Sigma(1);
+			    Sigma(0) = -Sigma(0);
 		    }
 	    }
     }
@@ -320,5 +328,37 @@ singularValueDecomposition(
 		    
 }
 
+
+/**
+   \brief 3x3 polar decomposition.
+   \param[in] F Input matrix.
+   \param[out] R Robustly a rotation matrix.
+   \param[out] S Robustly a SPD matrix.
+*/
+template <class T>
+inline void 
+PolarDecomposition(
+    const Eigen::Matrix<T, 3, 3>& F,
+    Eigen::Matrix<T, 3, 3>& R,
+    Eigen::Matrix<T, 3, 3>& S,
+    ScalarType<T> tol = 64 * std::numeric_limits<ScalarType<T> >::epsilon())
+{
+	using std::fabs;
+	using std::max;
+        R = Eigen::Matrix<T, 3, 3>::Identity();
+ 	S = F;
+	int it = 0;
+	int max_it = 1000;
+	while ((it < max_it) && max({(fabs(S(0, 1) - S(1, 0))), (fabs(S(0, 2) - S(2, 0))), (fabs(S(1, 2) - S(2, 1)))}) > tol){
+		for (int j = 1; j < 3; ++j){
+			for (int i = 0; i < j; ++i){
+				GivensRotation<T> r(S(i, i) + S(j, j), S(j, i) - S(i, j), i, j);
+				r.columnRotation(R);
+				r.rowRotation(S);
+			}
+		}
+		++it;
+	}
+				 																											}
 }
 #endif
