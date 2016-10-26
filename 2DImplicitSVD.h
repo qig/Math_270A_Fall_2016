@@ -206,7 +206,14 @@ JacobiRotation(
     T C21 = C(1, 0);
     T C22 = C(1, 1);
 
-    if (std::fabs(C21) > 1e-10)
+    if (std::abs(C21) == 0) 
+    {
+		V = Eigen::Matrix<T, 2, 2>::Identity();
+	    	Sigma(0) = C(0, 0);
+		Sigma(1) = C(1, 1);
+    }
+
+    else
     {
 		tau = (C22 - C11)/(2. * C21);
 		if (tau > 0)
@@ -216,21 +223,14 @@ JacobiRotation(
 			t = - C21 / ((C22-C11)/2. - sqrt(pow(C21, 2) + pow((C22-C11)/2., 2)));
 		c = JIXIE::MATH_TOOLS::rsqrt(1. + pow(t,2));
 		s = t * c;
-     		// Sigma(0) = pow(c, 2) * C11 + 2. * c * s * C21 + pow(s, 2) * C22;
-     		// Sigma(1) = pow(c, 2) * C11 - 2. * c * s * C21 + pow(s, 2) * C22;
+    		V << c, -s,
+		     s, c;
+     		// Eigen::Matrix<T, 2, 2> D = V.transpose() * C * V;
+     		// Sigma(0) = std::max(T(D(0, 0)), T(0));
+     		// Sigma(1) = std::max(T(D(1, 1)), T(0));
+     		 Sigma(0) = std::max(T(pow(c, 2) * C11 + 2. * c * s * C21 + pow(s, 2) * C22), T(0));
+     		 Sigma(1) = std::max(T(pow(s, 2) * C11 - 2. * c * s * C21 + pow(c, 2) * C22), T(0));
      } 
-    else
-    {
-		c = 1;
-		s = 0;
-		// Sigma(0) = C(0, 0);
-		// Sigma(1) = C(1, 1);
-    }
-
-    V << c, -s, s, c;
-     Eigen::Matrix<T, 2, 2> D = V.transpose() * C * V;
-     Sigma(0) = std::max(T(D(0, 0)), T(0));
-     Sigma(1) = std::max(T(D(1, 1)), T(0));
 }
 
 /**
@@ -295,9 +295,9 @@ singularValueDecomposition(
     if (det_F < 0){
 	    Sigma(1) = -Sigma(1);
 	    if (det_U_neg)
-		    U.col(1) = -U.col(1);
+	    	{U.col(1) = -U.col(1);}
 	    else
-		    V.col(1) = -V.col(1);
+	    	{V.col(1) = -V.col(1);}
     }
     else if (det_F > 0){
 
@@ -308,14 +308,14 @@ singularValueDecomposition(
     }
     else if (det_F == 0){
 	    if (det_V_neg){
-		    V.col(1) = -V.col(1);
+		    V.col(0) = -V.col(0);
 		    if (!det_U_neg)
 		    {
 		    	    Sigma(0) = -Sigma(0);
 		    }
 	    }
 	    if (det_U_neg){
-		    U.col(1) = - U.col(1);
+		    U.col(0) = - U.col(0);
 	   	    if (!det_V_neg)
 		    {
 			    Sigma(0) = -Sigma(0);
@@ -359,6 +359,7 @@ PolarDecomposition(
 		}
 		++it;
 	}
-				 																											}
+	
+}
 }
 #endif
