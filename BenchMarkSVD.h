@@ -5,7 +5,7 @@
 #include "Tools.h"
 #include <cmath>
 #include <iostream>
-#include "2DImplicitSVD.h"
+#include "2DSVD_3Dpolar.h"
 
 template <class T>
 void testAccuracy(const std::vector<Eigen::Matrix<T, 2, 2> >& AA,
